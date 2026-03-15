@@ -22,6 +22,18 @@
 
         .top-info { background: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; margin: 0 20px 20px; border-radius: 8px; }
 
+        /* Vùng hiển thị Link chia sẻ kết quả */
+        #share-section {
+            display: none;
+            background: #fff9f0;
+            padding: 20px;
+            margin: 0 20px 20px;
+            border-radius: 8px;
+            border: 2px dashed var(--accent-orange);
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
         .container { display: grid; grid-template-columns: 200px 1fr; gap: 20px; padding: 0 20px 100px; max-width: 1600px; margin: auto; }
         
         .sidebar { background: white; padding: 15px; border-radius: 8px; height: fit-content; position: sticky; top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
@@ -69,12 +81,24 @@
 </head>
 <body>
 
-<header><h1>IDENTIFICATION ADVANCED EXERCISE 3</h1></header>
+<div id="teacher-banner" style="display:none; background: #ff9800; color: white; text-align: center; padding: 10px; font-weight: bold; font-size: 1.1rem; text-transform: uppercase;">
+    Đang xem bài làm của học sinh
+</div>
+
+<header><h1>IELTS READING: IDENTIFICATION ADVANCED 3</h1></header>
 
 <div class="top-info">
     <div>Học sinh: <input type="text" id="studentName" style="padding: 8px; width: 250px;" placeholder="Nhập tên của bạn..."></div>
     <div style="font-weight:bold">⏱ <span id="timer">00:00</span></div>
     <div id="final-score" style="font-weight:bold; color:var(--accent-orange); font-size: 1.2rem;"></div>
+</div>
+
+<div id="share-section">
+    <h3 style="color: var(--accent-orange); margin-top:0;">🎉 Đã hoàn thành bài làm!</h3>
+    <p style="font-size: 1.1rem;">Hãy copy đường link dưới đây và gửi cho giáo viên của bạn để nộp bài:</p>
+    <input type="text" id="share-link" readonly style="width: 80%; padding: 12px; border: 1px solid #ccc; border-radius: 5px; margin-bottom: 10px; font-size: 1rem; color: #555;">
+    <br>
+    <button onclick="copyShareLink()" style="background: var(--primary); color: white; border: none; padding: 12px 25px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">📋 Copy Link Nộp Bài</button>
 </div>
 
 <div class="container">
@@ -311,12 +335,66 @@
         const display = document.getElementById('vocab-display');
         display.innerHTML = "Đang tra: <b>" + word + "</b>...";
         try {
-            const res = await fetch(`https://api.mymemory.translated.net/get?q=${word}&langpair=en|vi`);
-            const data = await res.json();
-            const trans = data.responseData.translatedText;
-            display.innerHTML = "<b>" + word + "</b>: " + trans;
-            document.getElementById('vocab-list').innerHTML = "<div>• " + word + ": " + trans + "</div>" + document.getElementById('vocab-list').innerHTML;
-        } catch(e) { display.innerHTML = "Lỗi tra từ."; }
+            // 1. Sử dụng Google Translate API
+            const transRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(word)}`);
+            const transData = await transRes.json();
+            const trans = transData[0][0][0];
+
+            // 2. Lấy Audio và Phiên âm từ Dictionary API
+            let audioHtml = "";
+            let phonetic = "";
+            let audioUrl = "";
+            
+            try {
+                const dictRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+                if (dictRes.ok) {
+                    const dictData = await dictRes.json();
+                    if (dictData && dictData.length > 0) {
+                        const selectedAccent = document.getElementById('voice-accent').value;
+                        const targetAccentCode = selectedAccent === 'en-US' ? '-us' : '-uk';
+                        
+                        for (let p of dictData[0].phonetics) {
+                            if (p.text && !phonetic) phonetic = p.text;
+                            if (p.audio) {
+                                audioUrl = p.audio;
+                                if (p.audio.includes(targetAccentCode)) break; 
+                            }
+                        }
+                    }
+                }
+            } catch (e) { console.log("Không lấy được audio từ API từ điển", e); }
+
+            if (audioUrl) {
+                audioHtml = `<button onclick="new Audio('${audioUrl}').play()" style="background:none; border:none; cursor:pointer; font-size:1.2rem; padding: 0; outline: none;" title="Nghe phát âm chuẩn từ điển">🔊</button>`;
+            } else {
+                audioHtml = `<button onclick="speakWord('${word}')" style="background:none; border:none; cursor:pointer; font-size:1.2rem; padding: 0; outline: none;" title="Nghe phát âm">🔊</button>`;
+            }
+
+            display.innerHTML = `
+                <div style="display:flex; align-items:center; gap: 8px; flex-wrap: wrap;">
+                    <b style="font-size: 1.1rem; color: #13a62e;">${word}</b> 
+                    <span style="color: #666;">${phonetic}</span>
+                    ${audioHtml}
+                </div>
+                <div style="margin-top: 5px; color: #d9534f; font-weight: bold;">${trans}</div>
+            `;
+            
+            document.getElementById('vocab-list').innerHTML = `
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px dashed #eee;">
+                    <div>• <b>${word}</b>: <span style="color:#d9534f">${trans}</span></div>
+                    ${audioHtml}
+                </div>` + document.getElementById('vocab-list').innerHTML;
+                
+        } catch(e) { 
+            display.innerHTML = "Lỗi tra từ. Vui lòng thử lại."; 
+            console.error(e);
+        }
+    }
+
+    function speakWord(word) {
+        const utterance = new SpeechSynthesisUtterance(word);
+        utterance.lang = document.getElementById('voice-accent').value;
+        window.speechSynthesis.speak(utterance);
     }
 
     document.addEventListener('mouseup', function() {
@@ -344,12 +422,10 @@
     function explain(id) {
         const box = document.getElementById('exp-' + id);
         box.style.display = (box.style.display === 'block') ? 'none' : 'block';
-        // Lấy data-expl từ câu hỏi tương ứng
         let qEl = document.getElementById('q' + id) || document.getElementById('ql' + id.replace('l',''));
         if(qEl) box.innerText = qEl.getAttribute('data-expl');
     }
 
-    // Nav dots logic (Tổng cộng 5 câu phần 1 + 7 câu phần 2 = 12 câu)
     const dots = document.getElementById('nav-dots');
     for(let i=1; i<=12; i++) {
         let d = document.createElement('div');
@@ -361,32 +437,54 @@
         dots.appendChild(d);
     }
 
-    function grade() {
-        const name = document.getElementById('studentName').value;
-        if (!name) return alert("Vui lòng điền tên trước khi nộp bài!");
+    // --- URL Encoding/Decoding Helpers ---
+    function encodeData(data) {
+        return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    }
+
+    function decodeData(encodedStr) {
+        return JSON.parse(decodeURIComponent(escape(atob(encodedStr))));
+    }
+
+    function copyShareLink() {
+        const linkInput = document.getElementById('share-link');
+        linkInput.select();
+        linkInput.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        alert("Đã copy link thành công!\nHãy dán (Ctrl+V) link này vào tin nhắn để gửi cho giáo viên của bạn.");
+    }
+
+    function grade(isTeacherMode = false) {
+        const name = document.getElementById('studentName').value.trim();
+        if (!name && !isTeacherMode) return alert("Vui lòng điền họ và tên trước khi nộp bài!");
         
         clearInterval(timerInt);
         let score = 0;
+        let studentAnswers = []; // Mảng chứa 12 câu trả lời
         
         // Chấm phần 1 (1-5)
         for(let i=1; i<=5; i++) {
-            processQ('q'+i, 'fb-'+i, 'dot-'+i);
+            let uVal = processQ('q'+i, 'fb-'+i, 'dot-'+i);
+            studentAnswers.push(uVal);
         }
-        // Chấm phần 2 (6-12)
+        // Chấm phần 2 (6-12) tương ứng ql1-ql7
         for(let i=1; i<=7; i++) {
-            processQ('ql'+i, 'fb-l'+i, 'dot-'+(i+5));
+            let uVal = processQ('ql'+i, 'fb-l'+i, 'dot-'+(i+5));
+            studentAnswers.push(uVal);
         }
 
         function processQ(qId, fbId, dotId) {
             const q = document.getElementById(qId);
             const ans = q.getAttribute('data-ans');
             const selectedRadio = q.querySelector('input:checked');
-            const userVal = selectedRadio ? selectedRadio.value : "Chưa chọn";
+            const userVal = selectedRadio ? selectedRadio.value : "";
             const fbBox = document.getElementById(fbId);
             
             q.querySelector('.post-controls').style.display = 'block';
             fbBox.style.display = 'block';
             q.querySelectorAll('input[type="radio"]').forEach(r => r.disabled = true);
+
+            let displayUserVal = userVal === "" ? "Chưa chọn" : userVal;
 
             if (userVal === ans) {
                 score++;
@@ -395,26 +493,66 @@
                 document.getElementById(dotId).classList.add('correct');
             } else {
                 fbBox.className = "feedback-msg incorrect-msg";
-                fbBox.innerHTML = `✘ Sai (Đáp án đúng: ${ans} | Bạn chọn: ${userVal})`;
+                fbBox.innerHTML = `✘ Sai (Đáp án đúng: ${ans} | Đã chọn: ${displayUserVal})`;
                 document.getElementById(dotId).classList.add('incorrect');
             }
+            return userVal;
         }
         
         document.getElementById('final-score').innerText = "KẾT QUẢ: " + score + "/12";
         document.getElementById('submit-btn').style.display = 'none';
-        window.scrollTo({top: 0, behavior: 'smooth'});
+        document.getElementById('studentName').disabled = true;
 
-        // Gửi kết quả về Google Script
-        fetch('https://script.google.com/macros/s/AKfycbyDJ5ORzBODZf_tjLV0ahC7OTuIKVSaf3wasjfjdrCCIC2jNJY1ZQ2z5GADS6wookXP/exec', {
-            method: 'POST', mode: 'no-cors',
-            body: JSON.stringify({ studentName: name, totalScore: score + "/12" })
-        });
+        if (!isTeacherMode) {
+            // TẠO LINK URL KẾT QUẢ
+            const dataObj = { n: name, a: studentAnswers };
+            const encodedString = encodeData(dataObj);
+            const baseUrl = window.location.href.split('?')[0];
+            const finalLink = baseUrl + "?d=" + encodedString;
+            
+            document.getElementById('share-section').style.display = 'block';
+            document.getElementById('share-link').value = finalLink;
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
     }
     
     function copyVocab() {
         const list = document.getElementById('vocab-list').innerText;
         navigator.clipboard.writeText(list).then(() => alert("Đã copy danh sách từ vựng!"));
     }
+
+    // KHI TRANG LOAD LÊN (Kiểm tra xem có phải giáo viên đang mở link)
+    window.onload = function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const dataParam = urlParams.get('d');
+        
+        if (dataParam) {
+            try {
+                const studentData = decodeData(dataParam);
+                document.getElementById('studentName').value = studentData.n;
+                
+                // studentData.a là mảng 12 phần tử: 0-4 là q1-q5, 5-11 là ql1-ql7
+                for(let i=0; i<studentData.a.length; i++) {
+                    let answer = studentData.a[i];
+                    if (answer !== "") {
+                        let qId = i < 5 ? `#q${i+1}` : `#ql${i-4}`;
+                        let radio = document.querySelector(`${qId} input[value="${answer}"]`);
+                        if (radio) radio.checked = true;
+                    }
+                }
+                
+                document.getElementById('teacher-banner').style.display = 'block';
+                document.getElementById('teacher-banner').innerText = "ĐANG XEM BÀI LÀM CỦA HỌC SINH: " + studentData.n;
+                document.getElementById('timer').innerText = "Chế độ xem";
+                
+                grade(true);
+
+            } catch (error) {
+                console.error("Lỗi giải mã URL:", error);
+                alert("Đường link bài làm bị lỗi hoặc không hợp lệ!");
+            }
+        }
+    };
 </script>
 </body>
 </html>
